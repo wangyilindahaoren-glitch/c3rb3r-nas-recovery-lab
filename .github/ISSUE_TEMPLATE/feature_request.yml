@@ -1,0 +1,57 @@
+name: 功能建议
+description: 提出新路线、新脚本、新格式支持
+title: "[建议] "
+labels: ["待讨论"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: 从你的实际场景出发描述，而不是从技术方案出发。
+      placeholder: |
+        我有一批 .doc 文件被整文件加密了，盘上扫不到雕刻件，
+        但这些文件是客户签的合同，不能丢。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的做法
+      description: 有想法就写，没有也没关系 —— 我们一起想。
+      placeholder: |
+        我猜可以从 OLE2 的 Workbook 流里抽 SST 表来做识别？
+    validations:
+      required: true
+
+  - type: dropdown
+    id: route
+    attributes:
+      label: 属于哪条路线
+      options:
+        - A 旧 extent 还原
+        - B 明文提取
+        - C 找副本
+        - D 磁盘雕刻
+        - Drive 重建
+        - OSheet 容器
+        - OLE2 (.xls/.doc)
+        - PDF 处理
+        - 验证 / 交付
+        - 进度 / 流程
+        - 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 你的环境
+      description: NAS 系统、卷类型、目标文件格式。有特殊之处更要说。
+      placeholder: "群晖 DSM 7.2.1 / RAID1 / CoW 共享 / 目标是 .doc"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你试过什么
+      description: 已经试过的思路和结果，避免重复劳动。

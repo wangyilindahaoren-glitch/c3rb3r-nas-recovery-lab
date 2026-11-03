@@ -1,0 +1,108 @@
+name: 报告问题 / Bug
+description: 脚本跑不通、结果不对、环境不兼容 —— 附上 preflight 输出能省一半来回
+title: "[问题] "
+labels: ["需要信息"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！这个问题**大概率不是你的环境的问题**，多半是脚本的边界情况没处理到。
+        下面的信息能帮我们快速定位。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你执行了什么命令，看到了什么输出？完整的报错信息请贴上来。
+      placeholder: |
+        $ sudo python3 scripts/c3r_btrfs.py survey /volume1/homes/xxx --g 9324851
+        Traceback (most recent call last):
+          ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: preflight
+    attributes:
+      label: preflight 输出
+      description: |
+        必填。请执行下面这条命令，把**完整输出**贴进来：
+        `sudo python3 scripts/c3r_btrfs.py preflight /volume1/homes/<用户>/<某个>.L0CK3D`
+      render: shell
+      placeholder: |
+        [OK]     python3 版本
+        [OK]     root 权限
+        [FAIL]   btrfs ioctl
+        ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: nas
+    attributes:
+      label: NAS 系统
+      options:
+        - 群晖 Synology DSM 6
+        - 群晖 Synology DSM 7
+        - OpenMediaVault
+        - Unraid
+        - TrueNAS SCALE
+        - 其它（请在补充说明里写）
+    validations:
+      required: true
+
+  - type: input
+    id: dsm-version
+    attributes:
+      label: DSM 版本
+      placeholder: "7.2.1"
+
+  - type: dropdown
+    id: volume
+    attributes:
+      label: 数据卷的 Data 剖面
+      description: 群晖在"存储空间管理器 → 存储池"里能看到
+      options:
+        - single
+        - RAID1
+        - RAID5
+        - RAID6
+        - RAID10
+        - 其它
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: NAS 上的 Python 版本
+      description: 执行 `python3 --version`
+      placeholder: "Python 3.8.17"
+
+  - type: dropdown
+    id: share-type
+    attributes:
+      label: 目标共享的类型
+      options:
+        - CoW（写时复制）
+        - NoCOW
+        - 不确定
+        - home 目录
+        - 团队共享
+    validations:
+      required: true
+
+  - type: textarea
+    id: script-version
+    attributes:
+      label: 使用的脚本版本
+      description: |
+        `git log -1 --oneline` 或者你下载的 zip 是哪个版本。
+        涉及格式变化的问题，这条特别关键。
+      placeholder: "a1b2c3d v1.0.0"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充说明
+      description: 任何其它有用的信息 —— 相关日志、文件名特征、你试过什么。

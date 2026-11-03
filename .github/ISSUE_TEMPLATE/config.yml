@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 提交前必读 —— 常见问题与踩坑
+    url: https://github.com/wangyilindahaoren-glitch/c3rb3r-btrfs-recovery/blob/main/references/pitfalls.md
+    about: 大部分"跑不通"和"结果不对"这里都有答案，附了现象 / 原因 / 处理
+  - name: 环境兼容性 —— 我的 NAS 支持吗
+    url: https://github.com/wangyilindahaoren-glitch/c3rb3r-btrfs-recovery/blob/main/references/compatibility.md
+    about: 群晖 DSM 6/7、OMV、Unraid 的支持情况，以及 QNAP / ZFS 为什么不适用
+  - name: 主流程 —— 完整操作手册
+    url: https://github.com/wangyilindahaoren-glitch/c3rb3r-btrfs-recovery/blob/main/SKILL.md
+    about: 从分流到交付的每一步，含可照抄的命令

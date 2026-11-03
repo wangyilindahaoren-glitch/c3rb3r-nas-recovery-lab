@@ -252,6 +252,21 @@ $P --dir /work close --result "救回 459/483"                   # 结项
 | `references/pitfalls.md` | **踩过的坑**（现象 / 原因 / 处理），实战前先扫一遍 |
 | `references/progress-log.md` | **进度记录规范**：每轮开工落 `PROGRESS.md`，收尾回写 skill |
 | `references/case-*.md` | 两份脱敏后的实战实录 |
+| `CONTRIBUTING.md` | **贡献指南**：怎么提 issue、怎么提 PR、脱敏要求、脚本红线 |
+
+---
+
+## 参与贡献
+
+欢迎。这个项目里最值钱的贡献往往不是写代码，而是**"我在 XX 环境上跑，第 N 步报了这个错，我是怎么绕过去的"**。
+
+- 提 issue / PR 前先看 **[CONTRIBUTING.md](CONTRIBUTING.md)**（含脱敏要求、脚本红线、提交前自查清单）
+- GitHub 上已配好 **issue 模板**（bug 报告会自动收集 `preflight` 输出、NAS 类型、Python 版本）
+- 提 issue 时**务必附上 `preflight` 输出**，能省掉一半来回
+
+```bash
+sudo python3 scripts/c3r_btrfs.py preflight /volume1/homes/<用户>/<某个>.L0CK3D
+```
 
 ---
 
