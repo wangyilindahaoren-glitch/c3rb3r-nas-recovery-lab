@@ -245,7 +245,7 @@ install.sh            一键装进 AI 助手的 skill 目录（Claude / Kimi / O
 README.md             给人看的入门说明
 CONTRIBUTING.md       贡献指南：提 issue / 提 PR / 脱敏要求 / 脚本红线
 references/            17 篇详细文档（原理、踩坑、案例、操作手册）
-scripts/               76 个 Python 脚本 + 4 个 shell 脚本
+scripts/               76 个 Python 脚本 + 3 个 shell 脚本
   c3r_btrfs.py         NAS 端核心：preflight / env / gens / survey / extract / csum / plan
   c3r_local.py         本地端：解包、校验（SHA / 解码 / 已知原件对照）、挑选候选
   mkjob.py             把脚本 + 路径列表打包成一个 stdin 作业
