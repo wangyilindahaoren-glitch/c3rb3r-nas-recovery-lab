@@ -23,7 +23,7 @@
 | WPS OSheet 容器工具链 | ❌ | ✅ 解析 / 修复 / 严格校验 / 转 xlsx / 附件抠出（10 个脚本） |
 | 交付验证 | 基础校验 | ✅ **两档闸门**（`validate_installed.py` / `deep_validate.py`） |
 | 进度记录 | ❌ | ✅ `progress.py` —— 跨会话、跨天接着干 |
-| 文档 | 7 篇 | ✅ **18 篇**（含两份脱敏实战实录 + ext4 路线） |
+| 文档 | 7 篇 | ✅ **19 篇**（含两份脱敏实战实录 + ext4 路线与实录） |
 | 脚本 | 3 个 | ✅ **81 个** |
 
 **如果你只想要"按 Btrfs 旧 extent 逐字节还原"这一个能力**，直接用上游那个就够了，代码更少、依赖更干净。
@@ -52,7 +52,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记
 ```
 c3rb3r-nas-recovery-lab/
 ├── SKILL.md        ← 主流程（frontmatter 里的 description 决定何时触发）
-├── references/     ← 18 篇参考文档
+├── references/     ← 19 篇参考文档
 └── scripts/        ← 81 个脚本
 ```
 
@@ -288,7 +288,7 @@ SKILL.md              主流程：分流、路线选择、验证、收尾清单
 install.sh            一键装进 AI 助手的 skill 目录（Claude / Kimi / OpenClaw / …）
 README.md             给人看的入门说明
 CONTRIBUTING.md       贡献指南：提 issue / 提 PR / 脱敏要求 / 脚本红线
-references/            18 篇详细文档（原理、踩坑、案例、操作手册）
+references/            19 篇详细文档（原理、踩坑、案例、操作手册）
 scripts/               78 个 Python 脚本 + 3 个 shell 脚本
   c3r_btrfs.py         NAS 端核心：preflight / env / gens / survey / extract / csum / plan
   c3r_local.py         本地端：解包、校验（SHA / 解码 / 已知原件对照）、挑选候选
