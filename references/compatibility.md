@@ -78,6 +78,28 @@
 - ZFS 也是写时复制，被覆盖的块在没有快照时会被释放。不过 ZFS 的旧块可能保留在最近的事务组（TXG）里：可以用 `zdb` 查看，用只读方式导入较早的 TXG（`zpool import -o readonly=on -T <txg>`）做回滚式恢复。这和本工具是完全不同的工具链，而且时效性很强（TXG 会被不断覆盖）。如果有快照，直接从快照恢复即可。
 - 本 skill 的脚本不适用于 ZFS，只能参考其中"保全、验证、报告"的流程。
 
+### 3.6 ext4（QNAP 老卷、群晖老卷、手工装的 Linux）
+
+- ext4 **没有写时复制**：勒索程序原地改写文件时，旧内容被物理覆盖，
+  **路线 A（`c3r_btrfs.py` 的 preflight / gens / survey / extract）原理上不成立**。
+  `preflight` 会直接 FAIL 并提示"ext4 没有写时复制，本方法不适用"。
+- **但 ext4 有自己的恢复路线，而且不差**：未被加密的明文区（路线 B）、
+  找别的副本（路线 C）、**jbd2 日志里的旧数据块**、已删除 inode、块设备雕刻。
+  完整路线见 **`references/ext4.md`**。
+- ext4 与 Btrfs 的关键差异：
+
+  | | Btrfs | ext4 |
+  |---|---|---|
+  | 旧数据 | CoW 旧 extent，只要还被文件引用就还在 | 无；原地改写即物理覆盖 |
+  | 布局 | 元数据与 DATA chunk 分开，扫描器只扫 DATA | 混在同一分区，扫描器要用 `--range START:END` |
+  | 独有宝藏 | 快照代数、逐块校验和 | **jbd2 日志**（常留旧数据块）、已删 inode |
+  | 额外红线 | 不 balance / 不 defrag | 再加：**不跑 `e2fsck`（不带 `-n`）**、不用 `debugfs -w`、不 resize2fs |
+
+- 工具：`scripts/ext4_probe.py`（探测 + 导出日志 + 已删 inode）、
+  `scripts/jrn_match.py`（在日志里找回旧内容）、
+  `scripts/carve_scan.py --fs ext4`（按 ext4 魔数 `0xEF53` 定位分区，
+  位置 = 分区起点 + 0x438）。
+
 ## 4. 没有 Python 3 怎么办
 
 按推荐程度排序：

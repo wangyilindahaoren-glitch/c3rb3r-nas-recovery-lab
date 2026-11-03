@@ -113,6 +113,59 @@ def data_chunks(dev):
     return out
 
 
+def range_chunks(start, end, piece=1 << 30):
+    """把 [start, end) 切成若干块 —— 给 ext4 等**没有 DATA chunk 概念**的卷用。
+
+    Btrfs 上用 data_chunks()（只扫 DATA 类型 chunk，避开元数据区）；
+    ext4 上元数据和数据混在同一分区、没有 chunk 划分，只能整段扫，
+    这里按固定大小切片，纯粹是为了让多 worker 能并行 + 支持断点续扫。
+    扫描器对普通文件同样有效（os.pread 可以读文件），
+    所以 jbd2 日志镜像导出后也能直接喂给它。
+    """
+    out = []
+    p = start
+    while p < end:
+        n = min(piece, end - p)
+        out.append((p, n))
+        p += n
+    return out
+
+
+def parse_range(text):
+    """解析 'START:END'（十进制或 0x 十六进制）；END 省略时取到设备末尾"""
+    t = text.replace(',', '').strip()
+    if ':' in t:
+        a, b = t.split(':', 1)
+        start = int(a, 0)
+        end = int(b, 0) if b.strip() else None
+    else:
+        start = int(t, 0)
+        end = None
+    return start, end
+
+
+def device_size(path):
+    """块设备字节数（普通文件直接用文件大小）"""
+    try:
+        st = os.stat(path)
+        if st.st_size:
+            return st.st_size
+    except OSError:
+        pass
+    try:
+        import fcntl
+        import array
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            buf = array.array('q', [0])
+            fcntl.ioctl(fd, 0x80081272, buf, True)
+            return buf[0]
+        finally:
+            os.close(fd)
+    except Exception:
+        return None
+
+
 def load_sizes(path):
     d = {}
     with open(path, encoding='utf-8') as f:
@@ -125,12 +178,21 @@ def load_sizes(path):
     return d
 
 
-def do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file=None):
+def do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file=None,
+            dev=None, rng=None, piece_mb=1024):
     os.makedirs(outdir, exist_ok=True)
     targets = load_sizes(targets_tsv) if targets_tsv else {}
     sigs = [(n, p) for n, p, _t in SIGS if (sig_names is None or n in sig_names)]
 
-    chunks = data_chunks(DEV)
+    if dev:
+        globals()['DEV'] = dev
+    if rng:
+        r_start, r_end = parse_range(rng)
+        if r_end is None:
+            r_end = r_start + (device_size(DEV) or 0)
+        chunks = range_chunks(r_start, r_end, piece_mb << 20)
+    else:
+        chunks = data_chunks(DEV)
     pairs = list(enumerate(chunks))
     mine = pairs[worker::workers]
     if skip_file:
@@ -150,9 +212,10 @@ def do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file=None):
             'starts' if name in SIG_TYPE else 'ends', name, worker))
         outs[name] = open(fn, 'a', buffering=1)
     logf = open(os.path.join(outdir, 'scan_%d.log' % worker), 'a', buffering=1)
-    logf.write('# worker %d/%d DATA chunks=%d mine=%d sigs=%s\n'
+    logf.write('# worker %d/%d units=%d mine=%d sigs=%s%s\n'
                % (worker, workers, len(chunks), len(mine),
-                  ','.join(n for n, _ in sigs)))
+                  ','.join(n for n, _ in sigs),
+                  ('  range=%d:%d' % (r_start, r_end)) if rng else ''))
     logf.flush()
 
     fd = os.open(DEV, os.O_RDONLY)
@@ -174,8 +237,11 @@ def do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file=None):
                     if len(buf) < want:
                         break
                     pos += n
-        except Exception:
-            pass
+        except Exception as e:
+            # ⚠️ 千万别再静默吞掉：曾经 os.pread 在非 POSIX 平台不存在，
+            # 这里 except Exception: pass 把错误吃掉，扫描"跑完了"却 0 命中，
+            # 看着像"盘上没这文件"。**宁可报错，不要静默扫空。**
+            sys.stderr.write('[carve_gen_hits] 读取失败，已中止：%r\n' % (e,))
         q.put(None)
 
     q = queue.Queue(maxsize=3)
@@ -350,6 +416,9 @@ def main():
         targets_tsv = None
         sig_names = None
         skip_file = None
+        dev = None
+        rng = None
+        piece_mb = 1024
         i = 3
         while i < len(sys.argv):
             if sys.argv[i] == '--worker':
@@ -362,9 +431,16 @@ def main():
                 sig_names = sys.argv[i + 1].split(','); i += 2
             elif sys.argv[i] == '--skip-file':
                 skip_file = sys.argv[i + 1]; i += 2
+            elif sys.argv[i] == '--dev':
+                dev = sys.argv[i + 1]; i += 2
+            elif sys.argv[i] == '--range':
+                rng = sys.argv[i + 1]; i += 2
+            elif sys.argv[i] == '--piece-mb':
+                piece_mb = int(sys.argv[i + 1]); i += 2
             else:
                 i += 1
-        do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file)
+        do_scan(outdir, worker, workers, targets_tsv, sig_names, skip_file,
+                dev=dev, rng=rng, piece_mb=piece_mb)
     elif mode == 'match':
         do_match(sys.argv[2], sys.argv[3])
     else:

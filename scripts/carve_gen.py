@@ -15,6 +15,10 @@
 用法：
   python3 carve_gen.py <日志目录> --worker N --workers M --targets <tsv>
 
+  # ext4 等没有 DATA chunk 概念的卷：指定字节范围整段扫
+  python3 carve_gen.py <日志目录> --dev /dev/sda1 --range 0:8589934592 \
+      --worker 0 --workers 2 --targets <tsv>
+
 只读：只 open(O_RDONLY) 读块设备，不写卷。
 候选日志每行：<type>\\t<start>\\t<size>\\t<end_sig_offset>
 """
@@ -102,6 +106,57 @@ def data_chunks(dev):
     return out
 
 
+def range_chunks(start, end, piece=1 << 30):
+    """把 [start, end) 切成若干块 —— 给 ext4 等**没有 DATA chunk 概念**的卷用。
+
+    Btrfs 上用 data_chunks()（只扫 DATA 类型 chunk，避开元数据区）；
+    ext4 上元数据和数据混在同一分区、没有 chunk 划分，只能整段扫，
+    这里按固定大小切片，纯粹是为了让多 worker 能并行 + 支持断点续扫。
+    """
+    out = []
+    p = start
+    while p < end:
+        n = min(piece, end - p)
+        out.append((p, n))
+        p += n
+    return out
+
+
+def parse_range(text):
+    """解析 'START:END'（十进制或 0x 十六进制）；END 省略时取到设备末尾"""
+    t = text.replace(',', '').strip()
+    if ':' in t:
+        a, b = t.split(':', 1)
+        start = int(a, 0)
+        end = int(b, 0) if b.strip() else None
+    else:
+        start = int(t, 0)
+        end = None
+    return start, end
+
+
+def device_size(path):
+    """块设备字节数（普通文件直接用文件大小）"""
+    try:
+        st = os.stat(path)
+        if st.st_size:
+            return st.st_size
+    except OSError:
+        pass
+    try:
+        import fcntl
+        import array
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            buf = array.array('q', [0])
+            fcntl.ioctl(fd, 0x80081272, buf, True)
+            return buf[0]
+        finally:
+            os.close(fd)
+    except Exception:
+        return None
+
+
 def load_sizes(path):
     """返回 {size: [(ext, rel), ...]}"""
     d = {}
@@ -124,6 +179,9 @@ def main():
     targets_tsv = None
     resume_offset = 0
     sig_names = None
+    dev = None
+    rng = None
+    piece_mb = 1024
     i = 1
     while i < len(args):
         if args[i] == '--worker':
@@ -136,6 +194,12 @@ def main():
             resume_offset = int(args[i + 1]); i += 2
         elif args[i] == '--sigs':
             sig_names = args[i + 1].split(','); i += 2
+        elif args[i] == '--dev':
+            dev = args[i + 1]; i += 2
+        elif args[i] == '--range':
+            rng = args[i + 1]; i += 2
+        elif args[i] == '--piece-mb':
+            piece_mb = int(args[i + 1]); i += 2
         else:
             i += 1
 
@@ -143,7 +207,15 @@ def main():
     logf = open(os.path.join(logdir, 'c%d.log' % worker), 'a', buffering=1 << 20)
     targets = load_sizes(targets_tsv) if targets_tsv else {}
 
-    chunks = data_chunks(DEV)
+    if dev:
+        globals()['DEV'] = dev
+    if rng:
+        r_start, r_end = parse_range(rng)
+        if r_end is None:
+            r_end = r_start + (device_size(DEV) or 0)
+        chunks = range_chunks(r_start, r_end, piece_mb << 20)
+    else:
+        chunks = data_chunks(DEV)
     mine = chunks[worker::workers]
     sigs = [(n, p, t) for n, p, t in SIGS if (sig_names is None or n in sig_names)]
     if resume_offset:
@@ -158,9 +230,10 @@ def main():
         logf.write('# resume from phys %d: 跳过 %d 个已扫 chunk\n'
                    % (resume_offset, skipped))
         mine = keep
-    logf.write('# worker %d/%d  DATA chunks=%d  mine=%d  targets=%d sizes  sigs=%s\n'
+    logf.write('# worker %d/%d  units=%d  mine=%d  targets=%d sizes  sigs=%s%s\n'
                % (worker, workers, len(chunks), len(mine), len(targets),
-                  ','.join(n for n, _, _ in sigs)))
+                  ','.join(n for n, _, _ in sigs),
+                  ('  range=%d:%d' % (r_start, r_end)) if rng else ''))
     logf.flush()
 
     # 每种类型的待配对开头偏移（按新到旧）
@@ -201,8 +274,10 @@ def main():
                     if len(buf) < want:
                         break
                     pos += n
-        except Exception:
-            pass
+        except Exception as e:
+            # ⚠️ 千万别再静默吞掉：读取失败被 except Exception: pass 吃掉的话，
+            # 扫描"跑完了"却 0 命中，看着像"盘上没这文件"。**宁可报错，不要静默扫空。**
+            sys.stderr.write('[carve_gen] 读取失败，已中止：%r\n' % (e,))
         q.put(None)
 
     th = threading.Thread(target=producer, daemon=True)

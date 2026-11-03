@@ -179,3 +179,16 @@
 | `openpyxl` 生成的 xlsx 里 `xl/worksheets/sheetN.xml` 的编号**不等于**工作表顺序 | openpyxl 按写入顺序编号，但 `workbook.xml` 里的 `<sheet>` 顺序可能不同 | 映射要从 `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` 解析（注意 **rels 里 `Target` 在 `Id` 前面**，正则别写死顺序）。2026-11-03 因为按 `sheetnames[i]` 对号入座，补丁一条都没打上 |
 | 以为「回收站里那份和原件差 7 字节」就是没找全 | 先看**同一文档在 Drive 里的版本谱系**：差 7 字节往往就是**一次版本更新**（index 的 ver 号 + style 表） | 用 `text/index` 的 `ver`/`gcVer` 和 `text/style` 长度排出版本谱系，就能说清那 7 字节是什么。2026-11-03 实测：回收站两份 839108 字节的副本是**旧版本**（ver 7402 / style 12147），原件是 ver 7403 / style 12196 |
 | DSM 的 SSH 突然全报 `Your account has expired`，换多少密码都一样 | 该提示**出现在密码校验之前**（PAM 的 account 阶段），所以跟密码对错无关 | 2026-11-03 实测：用户把 admin 账户重新启用后立刻恢复。**先确认账户状态再怀疑密码**；别去试各种密码组合 |
+
+## 2026-11-03 ext4（没有写时复制）新增的坑
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 在 ext4 上跑 `preflight` 直接 FAIL，以为工具坏了 | ext4 **没有写时复制**。勒索程序原地改写文件，旧内容被物理覆盖，**路线 A 原理上不成立**（不是工具的问题） | 换路线：路线 B（明文区）+ 路线 C（找副本）+ **jbd2 日志**（ext4 独有）+ 已删 inode + 雕刻。完整路线见 `references/ext4.md` |
+| 在 ext4 上用 `carve_gen_hits.py` 扫了半天 0 命中 | 扫描器靠 `btrfs inspect-internal dump-tree` 找 **DATA chunk**，ext4 没有 chunk 概念 → 拿到空列表 | 加 `--dev` + `--range START:END`（偏移相对 `--dev`）按字节范围整段扫；范围先用 `carve_scan.py --fs ext4` 算。ext4 元数据混在同一分区，命中更多，靠 `carve_claim.py` 的结构校验筛 |
+| 定位 ext4 分区时把系统分区也一起扫了 | Btrfs 用魔数 `_BHRfS_M`（+0x40000 的超块里）自验证；ext4 的魔数在**分区起点 + 0x438**（超块在 +1024，`s_magic` 在超块内 +0x38） | `carve_scan.py --fs ext4` 已按 `0xEF53` 定位；手工验法：读分区设备的 0x438 处两字节是不是 `53 ef` |
+| 跑 `e2fsck`"修了一下"未挂载的 ext4，盘上残留的旧数据全没了 | `e2fsck`（不带 `-n`）会重写位图并**清掉释放的块** —— 那正是唯一还留着旧数据的地方 | **永远只读**：`e2fsck -n`。动手之前先用 `ext4_probe.py` 把日志镜像和已删 inode 清单导出到卷外 |
+| jbd2 日志里明明有旧内容，拼出来的文件却缺段 | 日志只保留最近的事务（默认 4MB），里面是**整个文件系统**的块、混着别的文件 → 「文件偏移→日志偏移」的映射只在部分区间成立 | `jrn_match.py` 会报覆盖率与 `delta` 可信度（`multi` = 多探针一致 / `single` = 存疑）并做结构校验，**只认通过校验的**。日志**越早导出越好**，卷上每写一次都可能把旧内容挤出去 |
+| 用 `debugfs` 改了点东西 | `debugfs` 不带 `-w` 是只读，带 `-w` 就是写盘 | 只读用法：`debugfs -R "lsdel" /dev/sdXN`、`debugfs -R "dump <ino> /tmp/out" /dev/sdXN`。**永远不要加 `-w`** |
+| 以为 ext4 上"没被加密的那部分"在盘上某处能找到 | 路线 B 的明文区是**当前密文文件里**没被加密的字节（勒索程序写新内容时搬过去的），不是盘上某处的旧副本 | 明文区直接从密文文件切（`plain_extract.py`），**不要**去盘上翻 |
+| ext4 上没做 `preflight` 就开跑，结果白干 | `preflight` 的"文件系统不是 btrfs → FAIL"就是 ext4 的分流信号 | 看到 ext4 就直接跳到 `references/ext4.md` 的第 2 节，别在 Btrfs 的 `gens`/`survey`/`extract` 上耗时间 |

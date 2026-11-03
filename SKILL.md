@@ -172,6 +172,8 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 1. **恢复过程中**不删除、不移动到别的卷、不覆盖任何 `.L0CK3D` 文件，不清空回收站。旧 extent 靠密文文件"拽着"才没被释放，删掉密文就等于销毁原件。
    **恢复完成、用户验收确认后**才可以按第 13 步清理密文和多余副本——但**只能清理"已成功恢复的那批文件"的密文**，绝不碰其它尚未恢复的文件的密文。
 2. **不做 defrag、balance、`btrfs check --repair`、rescue，不运行来源不明的"解密器"。** defrag 会重写 extent。
+   **ext4 上再禁三条**：不跑 `e2fsck`（不带 `-n` 的会清掉释放的块，把还没捞的旧数据彻底销毁）、
+   不用 `debugfs -w`、不 resize2fs / tune2fs（详见 `references/ext4.md`）。
 3. 恢复期间尽量减少卷上的写入：暂停 NVR 录像、下载、Photos 索引、同步任务。NAS 重启或 DSM 升级本身不会破坏被引用的旧 extent，但会丢掉内存现场，并带来大量写入。等导出完成后再做。
 4. 恢复结果写到 **NAS 以外**的盘，绝不回写原目录。
 5. 所有 NAS 端操作只读。用本 skill 的 `scripts/c3r_btrfs.py`，它只做查询、读文件和读块设备，临时文件只放在 `/tmp`，用完删除。
@@ -187,7 +189,9 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 | `scripts/plain_extract.py` | NAS（root，Python 3.6+ 标准库） | **路线 B**：按加密模式切出明文部分，直接写回 NAS 目录 |
 | `scripts/salvage_zip.py` | NAS（root，Python 3.6+ 标准库） | 从损坏的 xlsx/docx/zip 里逐个抢救成员（用中央目录定位 + CRC 校验） |
 | `scripts/probe_modes.py` | NAS（root，Python 3.6+ 标准库） | **诊断**：用结构签名反推每种 mode 的真实加密区间 |
-| `scripts/carve_scan.py` | NAS（root，Python 3.6+ 标准库） | **路线 D**：定位 Btrfs 卷在块设备上的字节范围（读分区表 + 用超块魔数自验证），生成 foremost 配置与现成命令 |
+| `scripts/carve_scan.py` | NAS（root，Python 3.6+ 标准库） | **路线 D**：定位 Btrfs / **ext4** 卷在块设备上的字节范围（读分区表 + 用超块魔数自验证），生成 foremost 配置与现成命令。`--fs btrfs\|ext4\|auto` |
+| `scripts/ext4_probe.py` | NAS（root，Python 3.6+ 标准库） | **ext4 专用**：读 ext4 超块（块大小 / inode 数 / 特性位 / 日志 inode），用 debugfs 列**已删除 inode**，`--dump-journal` 把 **jbd2 日志导出成镜像**。ext4 上最值钱的一步，越早做越好 |
+| `scripts/jrn_match.py` | NAS 或本地（Python 3.6+ 标准库） | **ext4 专用**：用密文的**明文区当指纹**在 jbd2 日志里定位旧内容，按「文件偏移 → 日志偏移」映射把**被覆盖的原始字节**取回来拼成候选原件，并做结构校验 |
 | `scripts/carve_match.py` | 本地（Python 3.8+） | **路线 D**：把雕刻产物对应回 `.L0CK3D` 原件（在密文明文区上逐字节比对） |
 | `scripts/carve_osheet_sig.py` | NAS（root，Python 3.6+ 标准库） | **路线 D 精确版**：在 DATA 区按 `.osheet` 的强签名顺序扫描（签名来源三选一：`--sig-file` 模板 / `--uid` / `--sig-hex`），捞回被整文件加密后已释放的旧原件 |
 | `scripts/carve_osheet_identify.py` | NAS（root，Python 3.6+ 标准库） | **认领**：从雕刻日志的命中地址按尾部标记定容器长度 + 严格解析，判定是不是目标文件（`--len` 给勒索标记里的 orig_len，可给多个） |
@@ -227,7 +231,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 | `scripts/tidy_delivery.py` | NAS 或本地 | **收尾清理**：把恢复目录整理成"每个文档一份 .osheet + 一份 .xlsx"，删掉密文/中间产物/重名副本。**默认预览，`--apply` 才真删，`--drop-cipher` 才删密文** |
 | `scripts/recover_one.py` | NAS（root） | **按需恢复单个文件**：复用已有扫描日志直接认领，**不重新扫盘**。原始长度自动从密文尾部 588 字节读 |
 | `scripts/read_footers.py` | NAS（root） | **读标记**：一次性读出目录下所有 `.L0CK3D` 的 `mode / pct / enc / orig_len / session marker`（orig_len = `footer[580:588]` u64 LE，是长度认领的基准） |
-| `scripts/carve_gen.py` | NAS（root） | **路线 D 通用版**：按文件魔数（zip/png/jpeg/pdf/ole）在 DATA chunk 上扫描，**边扫边匹配目标长度**。命中即算文件长度并查表，日志只有 KB 级。详见 `references/carve-generic.md` |
+| `scripts/carve_gen.py` | NAS（root） | **路线 D 通用版**：按文件魔数（zip/png/jpeg/pdf/ole）在 DATA chunk 上扫描，**边扫边匹配目标长度**。命中即算文件长度并查表，日志只有 KB 级。详见 `references/carve-generic.md`。`--dev` / `--range START:END` 支持**非 Btrfs 卷**（ext4 等） |
 | `scripts/carve_claim.py` | NAS（root） | **路线 D 通用认领**：按长度认领候选 → 结构校验（zip 能开 / PDF 有 xref / 图片头尾完整）→ 落盘。2026-10-31 实测：2.65TB 单路扫出 455 个唯一候选，按长度精确命中 **151/463** 个目标（xlsx 66 / pdf 34 / docx 32 / zip 19） |
 | `scripts/verify_origins.py` | NAS（root） | **路线 C 逐字节证实**：把候选原件与密文的**未加密区**逐字节比对。0x25/0x26 可证实；0x24 只能标"同名同大小" |
 | `scripts/xlsx_from_members.py` | 本地（Python 3.8+） | 把抢救回来的 xlsx 内部成员（`xl/worksheets/sheetN.xml` + `sharedStrings.xml` + `workbook.xml`）**还原成 xlsx + csv** |
@@ -241,7 +245,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 | `scripts/ole2_lib.py` | NAS（root） | **OLE2 容器解析库**（只读块设备）：FAT / 迷你FAT / 目录项 / 取流（WordDocument、Workbook）+ BIFF 工作表名 + 共享字符串表 + `doc_cjk()` 抽正文 + `text_hits()`/`context()` 关键词定位。**OLE2 没有结尾签名，只能靠它按正文认领** |
 | `scripts/ole2_identify.py` | NAS（root） | **OLE2 按正文认领**：两阶段（`screen` 只读头+FAT 算长度筛候选 → `identify` 读流抽正文按关键词判定）。2026-11-02 实测 12 个 .xls/.doc 目标里 **4 个 .doc 正文 100% 认准** |
 | `scripts/ole2_install.py` | NAS（root） | **按正文确认过的 OLE2 装回**：三道闸（长度 == orig_len / 正文含关键词 / 写回 SHA 一致）+ 属主 ACL + 只新增不动密文 |
-| `scripts/carve_gen_hits.py` | NAS（root） | **路线 D 扫描器 v2**：把**所有**签名命中偏移都记下来（pdf 开头 / `%%EOF` 结尾…），事后离线做集合配对。解决 `carve_gen.py` 的 pending 队列只有 16 槽、PDF 一多就**溢出漏认**的问题（实测：1/7 盘区上新规则命中 97 个目标长度，老规则 0 个）。子命令 `scan` / `match`。2026-11-02 加 `--skip-file <全局chunk号列表>`（断点续扫，换并发数不重扫）和**行缓冲**（原来 1MB 缓冲，进程被 kill 时缓冲区里的命中全丢） |
+| `scripts/carve_gen_hits.py` | NAS（root） | **路线 D 扫描器 v2**：把**所有**签名命中偏移都记下来（pdf 开头 / `%%EOF` 结尾…），事后离线做集合配对。解决 `carve_gen.py` 的 pending 队列只有 16 槽、PDF 一多就**溢出漏认**的问题（实测：1/7 盘区上新规则命中 97 个目标长度，老规则 0 个）。子命令 `scan` / `match`。2026-11-02 加 `--skip-file <全局chunk号列表>`（断点续扫，换并发数不重扫）和**行缓冲**（原来 1MB 缓冲，进程被 kill 时缓冲区里的命中全丢）。2026-11-03 加 `--dev` / `--range START:END`：**非 Btrfs 卷（ext4 等没有 DATA chunk 概念的）按字节范围整段扫**，日志镜像这类普通文件也能直接喂给它 |
 | `scripts/matched_to_carvelog.py` | 本地或 NAS | 把 `carve_gen_hits.py match` 的离线配对结果转成 `carve_claim.py` 认识的候选日志，好复用那条成熟的认领/装回流水线 |
 | `scripts/osheet_rebuild_from_drive.py` | 本地 / NAS | **字节级精确重建 `.osheet`**：用 Drive 的 Git 明文重建成与 WPS 原件**逐字节相同**的容器。`--selftest` 校准（必须 SHA-256 相同才继续）、`--survey` 按 `orig_len` 认领哪一版才是原件、`--exclude` 去掉 Drive 侧多出来的 `text/attachment`。2026-11-03 实测：重建件与盘上真实件 SHA-256 相同。详见 `references/osheet-rebuild-exact.md` |
 | `scripts/osheet_fix_crlf.py` | 本地 | 修 xlsx 里被 openpyxl 弄丢的**裸 CR**（openpyxl 写 CRLF、XML 解析器又把字面 CRLF 归一化成 LF）。**只修真正失真的那几格**，无脑全转义会把 1 处不符变成 544 处 |
@@ -277,6 +281,7 @@ RUN plan <目标文件> --g G   →  看 status
 
 | status / 情况 | 走哪条路 |
 |---|---|
+| **文件系统是 ext4（不是 Btrfs）** | **路线 A 原理上不成立**（ext4 没有写时复制，勒索程序原地改写即物理覆盖）→ **别跑 `plan`/`gens`/`survey`**，直接读 **`references/ext4.md`**，走 **B → C → jbd2 日志 → 已删 inode → 雕刻** |
 | **文件在 Synology Drive 同步目录下** | **先走 Drive 重建**（分钟级拿到大部分表格数据，**可能缺工作表**）→ 读 `references/synology-drive.md`。**别一上来就雕刻。** |
 | `exact` / `needs_inference` | **路线 A**：`RUN extract`，本 skill 的主战场 |
 | `no_candidate` + mode=`0x24` + 卷空闲 **< 5%** | 旧数据块大概率已被复用，雕刻白干 → 回头走**路线 C**（找备份副本） |
@@ -285,6 +290,9 @@ RUN plan <目标文件> --g G   →  看 status
 
 ⚠️ **被整文件加密的小文件（本 skill 最常见的"救不回"场景）不要再用元数据区反查旧叶子块**——
 叶内 item 布局试了三版没钉死。直接扫数据区，快且稳。
+
+⚠️ **ext4 用户不要在 Btrfs 流程上耗时间**：`preflight` 报 `filesystem FAIL`
+（"ext4 没有写时复制，本方法不适用"）就是分流信号，直接跳到 `references/ext4.md`。
 
 ### 0.5 最优执行顺序（2026-10-31 实战定型，照做能省几小时）
 
@@ -745,6 +753,35 @@ python3 scripts/deep_validate.py <pairs.tsv> <out.json>
    「别人的 home」几份拷贝，只要有一份没被加密就是现成原件。
    2026-11-01 实测 829514 个文件的索引里，按 (basename, size) 找到 23 个目标有明文副本
    （9 个能逐字节证实），另有 16 个目标能用「同名不同版本」顶替。
+
+### 8.5 ext4：没有 CoW 也能救（路线 E）
+
+**卷是 ext4（QNAP 老卷、群晖老卷、手工装的 Linux）时，本 skill 的主线不适用**：
+ext4 没有写时复制，勒索程序原地改写就把旧内容物理覆盖了 ——
+这不是工具问题，是文件系统原理决定的。
+
+但 ext4 有自己的一套路，完整路线见 **`references/ext4.md`**。速查：
+
+| 顺序 | 做什么 | 命令 | 耗时 |
+|---|---|---|---|
+| 0 | **先看加密进程还在不在** | `ls -l /proc/*/exe \| grep deleted` | 秒级 |
+| 1 | **立刻导出 jbd2 日志**（越早越灵） | `python3 scripts/ext4_probe.py --dev /dev/sda1 --dump-journal /tmp/jrn.bin` | 分钟级 |
+| 2 | 路线 B：明文提取（0x25 约 88%、0x26 尾部全部） | `python3 scripts/plain_extract.py --stamp 恢复 /volume1/homes/xxx` | 分钟级 |
+| 3 | 路线 C：找副本 | `python3 scripts/plain_index.py` + `verify_origins.py` | 分钟级 |
+| 4 | **路线 E1：日志里找回旧内容** | `python3 scripts/jrn_match.py /tmp/jrn.bin --cipher-dir <密文目录> --out /tmp/jrn_out` | 分钟级 |
+| 5 | 路线 E2：已删除 inode | `debugfs -R "dump <inode> /tmp/out" /dev/sda1` | 分钟级 |
+| 6 | 路线 D：雕刻（**改用 `--range`**） | `carve_scan.py --fs ext4` → `carve_gen_hits.py --range START:END` | 小时级 |
+
+**要点**：
+
+- ext4 的元数据和数据混在同一分区，没有 Btrfs 的 DATA chunk 概念，
+  所以扫描器要用 `--range START:END`（偏移相对 `--dev`），而不是自动找 chunk；
+- `ext4_probe.py` / `jrn_match.py` 用的加密区间语义与 `plain_extract.py` **完全一致**
+  （mode `0x24` / `0x25` / `0x26` 同一套定义）；
+- **ext4 红线比 Btrfs 多两条**：**不要跑 `e2fsck`（不带 `-n` 的会清掉释放的块，
+  把还没捞的旧数据彻底销毁）**、**不要用 `debugfs -w`**；
+- 汇报口径：ext4 上切出的明文段是**逐字节精确**的；日志里拼回来的要标
+  「候选 + 结构校验通过」，**不能和精确恢复混在一起说**。
 
 ### 9. 验证（缺一不可，分开登记）
 

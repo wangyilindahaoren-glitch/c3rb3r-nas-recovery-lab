@@ -233,7 +233,7 @@ python3 scripts/c3r_local.py report survey.jsonl.gz --depth 4
 
 ---
 
-## 四条恢复路线
+## 恢复路线
 
 | 路线 | 手段 | 适用 | 成本 |
 |---|---|---|---|
@@ -241,6 +241,7 @@ python3 scripts/c3r_local.py report survey.jsonl.gz --depth 4
 | **B** | 密文里**未被加密的那部分字节**仍是明文 | mode `0x25` / `0x26` | 分钟级 |
 | **C** | 备份目录 / 快照 / 回收站 / 别人 home 里的**副本** | 全类型 | 分钟级，命中率常最高 |
 | **D** | 块设备上**雕刻**已释放的旧 extent | mode `0x24` 整文件加密的小文件 | 小时级 |
+| **E** | **ext4 专用**：**jbd2 日志**里的旧数据块 + 已删除 inode | ext4 卷 | 分钟~小时 |
 
 外加一条 **Synology Drive 重建**路线：Drive 把每个 WPS 文档存成独立 Git 仓库，
 `.git/objects` 里的 blob 没有扩展名、**不会被勒索程序加密**，
@@ -248,6 +249,14 @@ python3 scripts/c3r_local.py report survey.jsonl.gz --depth 4
 
 **路线 A 优先，A 失败后走 B，C/D 兜底。** 但**顺序要按目标文件的状态分流**——
 被整文件加密的小文件不要再指望旧 extent，直接扫数据区更快。
+
+> **ext4 用户看这里** ⚠️
+> ext4 **没有写时复制**，勒索程序原地改写就把旧内容物理覆盖了 ——
+> **路线 A 原理上不成立**（`preflight` 会直接 FAIL，这不是工具的问题）。
+> 但路线 **B / C / D 照常可用**，还多两条 ext4 独有的路：
+> **jbd2 日志**（ext4 默认开日志，日志里常常留着被覆盖前的旧内容，**越早导越有戏**）
+> 和**已删除 inode**（`debugfs lsdel`）。
+> 完整执行顺序、命令与预期见 **[`references/ext4.md`](references/ext4.md)**。
 
 ---
 
@@ -272,8 +281,8 @@ SKILL.md              主流程：分流、路线选择、验证、收尾清单
 install.sh            一键装进 AI 助手的 skill 目录（Claude / Kimi / OpenClaw / …）
 README.md             给人看的入门说明
 CONTRIBUTING.md       贡献指南：提 issue / 提 PR / 脱敏要求 / 脚本红线
-references/            17 篇详细文档（原理、踩坑、案例、操作手册）
-scripts/               76 个 Python 脚本 + 3 个 shell 脚本
+references/            18 篇详细文档（原理、踩坑、案例、操作手册）
+scripts/               78 个 Python 脚本 + 3 个 shell 脚本
   c3r_btrfs.py         NAS 端核心：preflight / env / gens / survey / extract / csum / plan
   c3r_local.py         本地端：解包、校验（SHA / 解码 / 已知原件对照）、挑选候选
   mkjob.py             把脚本 + 路径列表打包成一个 stdin 作业
@@ -281,6 +290,8 @@ scripts/               76 个 Python 脚本 + 3 个 shell 脚本
   plain_extract.py     路线 B：按加密模式切出明文部分
   salvage_zip.py       从损坏的 xlsx/docx/zip 里抢救成员
   carve_*.py           路线 D：块设备雕刻扫描器 + 认领 + 装回
+  ext4_probe.py        ext4 专用：卷探测 + jbd2 日志导出 + 已删 inode 清单
+  jrn_match.py         ext4 专用：在 jbd2 日志里用明文指纹找回旧内容
   osheet_*.py          WPS OSheet 容器：解析 / 修复 / 校验 / 转 xlsx / 重建
   ole2_*.py            OLE2（.xls/.doc）容器解析与按正文认领
   validate_installed.py / deep_validate.py   交付前的"双击能不能打开"闸门
@@ -318,6 +329,7 @@ $P --dir /work close --result "救回 459/483"                   # 结项
 | 文件 | 内容 |
 |---|---|
 | `references/principles.md` | **原理**：为什么旧数据还在盘上，Btrfs 快照与代数的规则 |
+| `references/ext4.md` | **ext4 路线**：没有写时复制也能救 —— 明文区 / 副本 / **jbd2 日志** / 已删 inode / 雕刻 |
 | `references/c3rb3r-format.md` | 加密格式：588 字节标记、mode 语义、密钥派生 |
 | `references/plain-extract.md` | 路线 B 详解（动手前必读） |
 | `references/osheet.md` | WPS OSheet 容器格式、修复、交付形态 |
@@ -351,7 +363,11 @@ sudo python3 scripts/c3r_btrfs.py preflight /volume1/homes/<用户>/<某个>.L0C
 ## 已知适用范围
 
 - **适用**：Btrfs 卷（群晖 DSM 6/7、OMV、Unraid 等），Data 剖面为 single 或 RAID1 类。
-- **不适用**：QNAP / ZFS —— 机制不同，见 `references/compatibility.md`。
+- **ext4**：**路线 A 不适用**（没有写时复制），但**有专门的 ext4 路线**——
+  明文区（路线 B）/ 找副本（路线 C）/ **jbd2 日志里的旧数据块** / 已删除 inode / 雕刻，
+  完整步骤见 [`references/ext4.md`](references/ext4.md)。
+- **不适用**：ZFS —— 机制不同，见 `references/compatibility.md`。
+  QNAP 老卷多为 ext4，走上面的 ext4 路线。
 - **无法适用**：文件已被整体覆盖且旧 extent 已被复用（卷空闲 < 5% 时大概率如此）。
   这时唯一出路是找**别的副本**（路线 C）。
 
