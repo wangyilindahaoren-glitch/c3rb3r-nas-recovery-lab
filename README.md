@@ -11,15 +11,62 @@ C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记
 
 ---
 
-## 用 AI 助手（Claude / Kimi / Cursor 等）的话
+## 用 AI 助手的话（Claude Code / Kimi Code / OpenClaw / Cursor / Codex / DeepSeek / MiniMax / Cline / Windsurf …）
 
-本目录是一个 **Agent Skill**：把整个目录放进你的 skill 目录
-（`~/.claude/skills/` / `~/.agents/skills/` / `~/.kimi-code/skills/`），然后直接说：
+本目录是一个标准的 **Agent Skill**，目录结构是通用的：
 
-> "我的群晖被 C3RB3R 勒索了，文件变成 .L0CK3D 了，帮我恢复"
+```
+c3rb3r-btrfs-recovery/
+├── SKILL.md        ← 主流程（frontmatter 里的 description 决定何时触发）
+├── references/     ← 17 篇参考文档
+└── scripts/        ← 79 个脚本
+```
 
-skill 的 `description` 里写了完整的触发词，助手会自动加载 `SKILL.md`
-并按里面的流程走（分流 → 自检 → 定 G → 普查 → 选路线 → 导出 → 验证 → 装回 → 收尾）。
+任何支持这个结构的 AI 助手都能用——**把整个目录放进它的 skill 目录就行**。
+
+### 已验证的安装路径
+
+| AI 助手 | skill 目录 | 怎么用 |
+|---|---|---|
+| **Claude Code / Claude Desktop** | `~/.claude/skills/c3rb3r-btrfs-recovery/` | 装完直接说人话即可 |
+| **Kimi Code** | `~/.kimi-code/skills/c3rb3r-btrfs-recovery/` | 同上；Kimi 可挂 MiniMax / DeepSeek 等模型 provider，skill 机制一致 |
+| **OpenClaw** | `~/.openclaw/skills/c3rb3r-btrfs-recovery/` | 同上 |
+| **通用 AGENTS 生态目录** | `~/.agents/skills/c3rb3r-btrfs-recovery/` | 任何读 `~/.agents/skills/` 的 harness 都能用 |
+
+一键安装（自动探测上面几个目录）：
+
+```bash
+bash install.sh                    # 装到所有探测到的 skill 目录
+bash install.sh ~/.claude/skills   # 只装到指定目录
+```
+
+### 没有 skill 目录机制的工具
+
+有些工具不走 skill 目录，得换个装法：
+
+| 工具 | 装法 |
+|---|---|
+| **Cursor** | 放进 `.cursor/rules/c3rb3r.mdc`，frontmatter 写成 `description` + `alwaysApply: false`，正文用 `SKILL.md` 的内容；脚本路径改成绝对路径 |
+| **Codex CLI** | 放进 `~/.codex/` 或仓库根的 `AGENTS.md`，让 agent 在需要时读取 `SKILL.md` |
+| **DeepSeek / MiniMax 自建 harness** | 把 `SKILL.md` 的 frontmatter + 正文作为 system prompt 或首条指令；`scripts/`、`references/` 放在 harness 能读到的本地路径，正文里的相对路径相应改成绝对路径 |
+| **Cline / Roo Code / Windsurf** | 同 Cursor，导出成 rules 文件 |
+| **纯对话模型（网页版）** | 把 `SKILL.md` 整份贴进去，连同 `references/` 里要用的那几篇。脚本得自己执行、把输出贴回去 |
+
+> **通用兜底**：只要 agent 能读文件、能执行 shell 命令，这套东西就能跑。
+> skill 目录机制只是为了让它**自动触发**；不装也行——直接说
+> "读一下 `SKILL.md`，按里面的流程恢复我的 NAS"，效果一样。
+
+### 装完直接说人话
+
+```
+"我的群晖被 C3RB3R 勒索了，文件变成 .L0CK3D 了，帮我恢复"
+```
+
+`SKILL.md` 的 `description` 里写了完整触发词（NAS / 群晖 / 被勒索 / `.L0CK3D` /
+`read-me3.txt` / C3RB3R / Cerber / 文件被加密想恢复 / 文件打不开但想看里面内容 /
+文件被删了想找回 / 磁盘里还有残留文件 …），助手会**自动加载** `SKILL.md` 并按流程走：
+
+分流 → 自检 → 定 G → 普查 → 选路线 → 导出 → 验证 → 装回 → 收尾
 
 **你只需要准备**：SSH 能连上 NAS、sudo 权限、知道要恢复的目录路径。
 
@@ -194,18 +241,21 @@ python3 scripts/c3r_local.py report survey.jsonl.gz --depth 4
 
 ```
 SKILL.md              主流程：分流、路线选择、验证、收尾清单
-references/            16 篇详细文档（原理、踩坑、案例、操作手册）
-scripts/               75 个 Python 脚本 + 4 个 shell 脚本
+install.sh            一键装进 AI 助手的 skill 目录（Claude / Kimi / OpenClaw / …）
+README.md             给人看的入门说明
+CONTRIBUTING.md       贡献指南：提 issue / 提 PR / 脱敏要求 / 脚本红线
+references/            17 篇详细文档（原理、踩坑、案例、操作手册）
+scripts/               76 个 Python 脚本 + 4 个 shell 脚本
   c3r_btrfs.py         NAS 端核心：preflight / env / gens / survey / extract / csum / plan
   c3r_local.py         本地端：解包、校验（SHA / 解码 / 已知原件对照）、挑选候选
   mkjob.py             把脚本 + 路径列表打包成一个 stdin 作业
+  progress.py          进度记录：开工建 PROGRESS.md、切阶段、记数字、收尾结项
   plain_extract.py     路线 B：按加密模式切出明文部分
   salvage_zip.py       从损坏的 xlsx/docx/zip 里抢救成员
   carve_*.py           路线 D：块设备雕刻扫描器 + 认领 + 装回
   osheet_*.py          WPS OSheet 容器：解析 / 修复 / 校验 / 转 xlsx / 重建
   ole2_*.py            OLE2（.xls/.doc）容器解析与按正文认领
   validate_installed.py / deep_validate.py   交付前的"双击能不能打开"闸门
-  progress.py             进度记录：开工建 PROGRESS.md、切阶段、记关键数字、收尾结项
 ```
 
 每个脚本都带独立 docstring 说明**在哪运行**（NAS 端 / 本地端）、需要什么依赖。
