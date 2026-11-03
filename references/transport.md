@@ -82,10 +82,10 @@ DSM 的 SSH 需要先在"控制面板 → 终端机和 SNMP"里开启，而且�
 
 ### Windows 本机环境（实测，2026-10-30）
 
-这几条是这台机器的实际状况，换台机器不一定适用，但踩坑代价高：
+这几条是**某些 Windows 环境**下的实际状况，换台机器不一定适用，但踩坑代价高：
 
 - **`python` 命令是 Microsoft Store 占位符**，执行任何脚本都直接退出码 49（什么都不干）。真正的解释器在
-  `C:\Users\Administrator\AppData\Local\Programs\Python\Python38\python.exe`（3.8.0），
+  `<Python安装路径>\python.exe`（3.8.0），
   用 `py` 也能调到。本地脚本需要 3.8+。
 - **`github.com` 网页不可达**，但 `api.github.com` 和 `codeload.github.com` 直连正常。
   拉 GitHub 仓库走这两条路：`api.github.com/repos/<owner>/<repo>/contents/<path>` 取文件，
