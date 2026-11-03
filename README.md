@@ -22,8 +22,8 @@
 | WPS OSheet 容器工具链 | ❌ | ✅ 解析 / 修复 / 严格校验 / 转 xlsx / 附件抠出（10 个脚本） |
 | 交付验证 | 基础校验 | ✅ **两档闸门**（`validate_installed.py` / `deep_validate.py`） |
 | 进度记录 | ❌ | ✅ `progress.py` —— 跨会话、跨天接着干 |
-| 文档 | 7 篇 | ✅ **17 篇**（含两份脱敏实战实录） |
-| 脚本 | 3 个 | ✅ **79 个** |
+| 文档 | 7 篇 | ✅ **18 篇**（含两份脱敏实战实录 + ext4 路线） |
+| 脚本 | 3 个 | ✅ **81 个** |
 
 **如果你只想要"按 Btrfs 旧 extent 逐字节还原"这一个能力**，直接用上游那个就够了，代码更少、依赖更干净。
 
@@ -46,8 +46,8 @@ C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记
 ```
 c3rb3r-nas-recovery-lab/
 ├── SKILL.md        ← 主流程（frontmatter 里的 description 决定何时触发）
-├── references/     ← 17 篇参考文档
-└── scripts/        ← 79 个脚本
+├── references/     ← 18 篇参考文档
+└── scripts/        ← 81 个脚本
 ```
 
 任何支持这个结构的 AI 助手都能用——**把整个目录放进它的 skill 目录就行**。
@@ -113,7 +113,8 @@ bash install.sh ~/.claude/skills   # 只装到指定目录
 > 还原 WPS `.osheet` 表格并转成通用 `.xlsx`。
 >
 > 不能做：**不能解密**——被完整加密的文件没有密钥就是解不开；
-> 不能造出已经彻底消失的数据；只支持 Btrfs（群晖/OMV/Unraid），QNAP、ZFS 不适用。
+> 不能造出已经彻底消失的数据；**Btrfs** 卷走主线，**ext4** 卷走另一条路线
+> （明文区 / 找副本 / **jbd2 日志** / 已删 inode / 雕刻，见 `references/ext4.md`），**ZFS 不适用**。
 
 **② 请你提供 4 项信息**
 
@@ -148,7 +149,7 @@ bash install.sh ~/.claude/skills   # 只装到指定目录
 
 | 检查 | 命令（**NAS 端**，root） | 不通过怎么办 |
 |---|---|---|
-| 卷是不是 Btrfs | `df -T /volume1` / `mount \| grep btrfs` | 不是 Btrfs → 本工具不适用，见 `references/compatibility.md` |
+| 卷是什么文件系统 | `df -T /volume1` / `mount \| grep -E 'btrfs\|ext4'` | **ext4** → 走 ext4 路线（`references/ext4.md`，路线 A 不适用）；**ZFS** → 本工具不适用，见 `references/compatibility.md` |
 | 加密程序还在跑吗 | `ls -l /proc/*/exe 2>/dev/null \| grep deleted` | **还在跑就 `kill -STOP` 冻结它**（别 kill、别重启），可能能从内存里取到密钥 |
 | 卷空闲还剩多少 | `df -h /volume1` | **空闲 < 5%** → 旧数据块大概率已被复用，雕刻这条路基本白干，改走"找副本" |
 
@@ -161,7 +162,7 @@ bash install.sh ~/.claude/skills   # 只装到指定目录
 
 | 项 | 要求 | 说明 |
 |---|---|---|
-| NAS | 群晖 DSM 6/7、OMV、Unraid 等 **Btrfs** 系统 | QNAP / ZFS **不适用**（机制不同） |
+| NAS | 群晖 DSM 6/7、OMV、Unraid 等 **Btrfs** 系统（主线）；**ext4** 系统走 `references/ext4.md` 里的 ext4 路线 | ZFS **不适用**（机制不同） |
 | SSH | 能 SSH 上去，并能 `sudo` | DSM：控制面板 → 终端机和 SNMP → 启用 SSH |
 | Python | NAS 端 3.6+（DSM 7 自带 3.8） | **只用标准库**，不用装任何东西 |
 | 权限 | 恢复操作需要 **root** | 要读块设备、发 Btrfs ioctl |

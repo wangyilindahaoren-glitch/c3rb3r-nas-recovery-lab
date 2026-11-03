@@ -1,15 +1,15 @@
 ---
 name: c3rb3r-nas-recovery-lab
 author: wangyilin
-version: 1.0.0
+version: 1.1.0
 created: 2026-11-03
-description: 恢复被 C3RB3R / Cerber 系勒索软件（文件后缀 .L0CK3D、勒索信 read-me3.txt）加密的群晖（Synology DSM）或其他 Btrfs NAS 上的数据，无需密钥：利用 Btrfs 写时复制留下的旧 extent 逐字节还原原文件，并用 Btrfs 校验和逐块证实；并对已被整体重写、旧 extent 释放的文件，按 C3RB3R 加密模式（尾部 588 字节标记）切出未被加密的明文部分，以及从损坏的 xlsx/docx/zip 中抢救成员、重建 PDF；实在救不回来的，走雕刻（file carving）在块设备上捞回已释放的旧 extent。只要用户提到 NAS / 群晖 / 黑群晖 被勒索、.L0CK3D、read-me3.txt、C3RB3R、Cerber、"文件被加密想恢复"、"没有备份没有快照怎么救"、"文件打不开但想看里面内容"、"文件被删了想找回"、"磁盘里还有残留文件"、"文件雕复"，即使没提 Btrfs 或 extent，也应使用本 skill。覆盖 CoW / NoCOW 判定、子卷快照代数（lastsnap）效应、extent 树精确重组、大文件跨 extent 推测、文件雕刻、统计、导出、验证和报告。也覆盖「雕刻索引按容器 id 反查」这条高收益打法（容器头的 id = Synology Drive 仓库目录名，按 id 列出该文档在盘上的所有历史版本再按 orig_len 筛，实测把 74 个 .osheet 里救回 65 个），以及群晖回收站/@sharesnap 快照里捞勒索前明文原件的做法。Use for ransomware recovery of .L0CK3D files on Synology/Btrfs volumes without the key. 也覆盖"文件在 Synology Drive 同步目录下"这一最省时的情形（Drive 的 Git 仓库里留着勒索前明文，可分钟级重建表格数据，见 references/synology-drive.md）。
+description: 恢复被 C3RB3R / Cerber 系勒索软件（文件后缀 .L0CK3D、勒索信 read-me3.txt）加密的群晖（Synology DSM）、ext4（QNAP 老卷、手工装的 Linux 等）或 Btrfs NAS 上的数据，无需密钥：利用 Btrfs 写时复制留下的旧 extent 逐字节还原原文件，并用 Btrfs 校验和逐块证实；并对已被整体重写、旧 extent 释放的文件，按 C3RB3R 加密模式（尾部 588 字节标记）切出未被加密的明文部分，以及从损坏的 xlsx/docx/zip 中抢救成员、重建 PDF；实在救不回来的，走雕刻（file carving）在块设备上捞回已释放的旧 extent。只要用户提到 NAS / 群晖 / 黑群晖 被勒索、.L0CK3D、read-me3.txt、C3RB3R、Cerber、"文件被加密想恢复"、"没有备份没有快照怎么救"、"文件打不开但想看里面内容"、"文件被删了想找回"、"磁盘里还有残留文件"、"文件雕复"，即使没提 Btrfs 或 extent，也应使用本 skill。覆盖 CoW / NoCOW 判定、子卷快照代数（lastsnap）效应、extent 树精确重组、大文件跨 extent 推测、文件雕刻、统计、导出、验证和报告。也覆盖「雕刻索引按容器 id 反查」这条高收益打法（容器头的 id = Synology Drive 仓库目录名，按 id 列出该文档在盘上的所有历史版本再按 orig_len 筛，实测把 74 个 .osheet 里救回 65 个），以及群晖回收站/@sharesnap 快照里捞勒索前明文原件的做法。Use for ransomware recovery of .L0CK3D files on Synology/Btrfs/ext4 volumes without the key. 也覆盖"文件在 Synology Drive 同步目录下"这一最省时的情形（Drive 的 Git 仓库里留着勒索前明文，可分钟级重建表格数据，见 references/synology-drive.md）。
 ---
 
-# C3RB3R 勒索后的 Btrfs 无密钥恢复
+# C3RB3R 勒索后的 NAS 无密钥恢复（Btrfs 主线 + ext4 路线）
 
 > **扩展维护者**：wangyilin ｜ **上游**：[crt106/c3rb3r-btrfs-recovery](https://github.com/crt106/c3rb3r-btrfs-recovery)（MIT，版权声明见 `LICENSE`）
-> **版本**：v1.0.0 ｜ **首发日期**：2026-11-03
+> **版本**：v1.1.0 ｜ **首发日期**：2026-11-03 ｜ **v1.1.0 新增：ext4 恢复路线**（`references/ext4.md`）
 > **维护约定**：每轮开工必须先落 `PROGRESS.md`（见 [§0.7 进度记录](#07-进度记录每轮必做)），
 > 每轮收尾必须回写本 skill（见 [§14 收尾回写 skill](#14-收尾回写-skill每轮必做这是本-skill-的自我迭代机制)）。
 
@@ -53,7 +53,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 
 - **不能解密。** 被勒索程序完整加密的文件，没有密钥就是解不开
 - 不能凭空造出**已经彻底消失**的数据
-- 只支持 **Btrfs** 卷（群晖 / OMV / Unraid）；QNAP、ZFS **不适用**
+- **Btrfs** 卷走主线（群晖 / OMV / Unraid）；**ext4** 卷有另一条路线（`references/ext4.md`）；**ZFS 不适用**
 
 **预期效果**（给个参照，别承诺过头）：
 
@@ -115,7 +115,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，追加 588 字节标记后改名�
 【它不能做什么】
 · 不能解密 —— 被完整加密的文件，没有密钥就是解不开
 · 不能造出已经彻底消失的数据
-· 只支持 Btrfs 卷（群晖 / OMV / Unraid）；QNAP、ZFS 不适用
+· **Btrfs** 卷走主线（群晖 / OMV / Unraid）；**ext4** 卷走 `references/ext4.md` 里的 ext4 路线；**ZFS 不适用**
 
 【预期效果】
 · 大图片、视频（>1MB），共享开了写时复制或有快照 → 大部分能精确还原
@@ -432,7 +432,7 @@ $P --dir /work close --result "救回 459/483，其余 24 个走路线C"
 - 与 `btrfs-map-logical` 的交叉验证；
 - 校验和自检、NoCOW 标记。
 
-每一项都会给出 OK、WARN 或 FAIL，失败时附带处理建议。**只要有 FAIL，就按 `references/compatibility.md` 的对应条目处理，处理好之前不要继续。** 那份文档还涵盖：群晖 DSM 6/7、OMV、Unraid 等其他 Btrfs 系统，QNAP 与 ZFS 为什么不适用，没有 Python 3 时怎么办，以及拆盘到 Linux 电脑离线处理的通用方案。如果某台设备需要改脚本，改完后必须重新通过该文档最后一节列出的自检。
+每一项都会给出 OK、WARN 或 FAIL，失败时附带处理建议。**只要有 FAIL，就按 `references/compatibility.md` 的对应条目处理，处理好之前不要继续。** 那份文档还涵盖：群晖 DSM 6/7、OMV、Unraid 等其他 Btrfs 系统，**ext4 卷怎么走另一条路线**、ZFS 为什么不适用，没有 Python 3 时怎么办，以及拆盘到 Linux 电脑离线处理的通用方案。如果某台设备需要改脚本，改完后必须重新通过该文档最后一节列出的自检。
 
 然后运行 `RUN env /volume1`，记录以下信息：
 
