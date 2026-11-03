@@ -1,6 +1,14 @@
 MIT License
 
+Copyright (c) 2026 crt106
 Copyright (c) 2026 wangyilin (c3rb3r-btrfs-recovery contributors)
+
+This project is an extension of the original "c3rb3r-btrfs-recovery" skill by
+crt106 (https://github.com/crt106/c3rb3r-btrfs-recovery), also MIT licensed.
+The original work covers the Btrfs extent-reconstruction route; this fork adds
+the plaintext-extraction, copy-hunting and raw-device carving routes, the
+Synology Drive rebuild, the OSheet container toolchain, the progress ledger,
+and the delivery-verification gates.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

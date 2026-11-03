@@ -1,5 +1,5 @@
 ---
-name: c3rb3r-btrfs-recovery
+name: c3rb3r-nas-recovery-lab
 author: wangyilin
 version: 1.0.0
 created: 2026-11-03
@@ -8,7 +8,8 @@ description: 恢复被 C3RB3R / Cerber 系勒索软件（文件后缀 .L0CK3D、
 
 # C3RB3R 勒索后的 Btrfs 无密钥恢复
 
-> **作者**：wangyilin ｜ **版本**：v1.0.0 ｜ **首发日期**：2026-11-03
+> **扩展维护者**：wangyilin ｜ **上游**：[crt106/c3rb3r-btrfs-recovery](https://github.com/crt106/c3rb3r-btrfs-recovery)（MIT，版权声明见 `LICENSE`）
+> **版本**：v1.0.0 ｜ **首发日期**：2026-11-03
 > **维护约定**：每轮开工必须先落 `PROGRESS.md`（见 [§0.7 进度记录](#07-进度记录每轮必做)），
 > 每轮收尾必须回写本 skill（见 [§14 收尾回写 skill](#14-收尾回写-skill每轮必做这是本-skill-的自我迭代机制)）。
 
@@ -920,7 +921,8 @@ python3 tidy_delivery.py <目录> --apply --drop-cipher --backup-dir <备份目�
 
 ## 版本来源与维护
 
-本项目是上游 [`crt106/c3rb3r-btrfs-recovery`](https://github.com/crt106/c3rb3r-btrfs-recovery)（MIT）的**超集**：
+本项目是上游 [`crt106/c3rb3r-btrfs-recovery`](https://github.com/crt106/c3rb3r-btrfs-recovery)（MIT）的**扩展**。
+上游版权声明保留在 `LICENSE`；同步上游时**移植片段，不要整文件覆盖**。
 
 - **上游原样**：路线 A 的 `c3r_btrfs.py` / `c3r_local.py` / `mkjob.py`，以及 `compatibility.md`、`c3rb3r-format.md`、`report-template.md`。
 - **本项目新增**：

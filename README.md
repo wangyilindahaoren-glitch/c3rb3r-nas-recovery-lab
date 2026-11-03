@@ -1,9 +1,37 @@
-# c3rb3r-btrfs-recovery
+# c3rb3r-nas-recovery-lab
 
 > **作者**：wangyilin ｜ **版本**：v1.0.0 ｜ **首发日期**：2026-11-03 ｜ **License**：MIT
 >
-> 群晖 / Linux NAS 遭 **C3RB3R** 勒索后的**无密钥数据恢复**工具箱。
-> 不需要解密密钥，四条路线互为补充，把能救的文件救回来。
+> 群晖 / Linux NAS 遭勒索后的**数据分诊与交付**工具箱。
+> 密钥、备份、快照都没有的时候，判断哪些文件还能救、怎么救、怎么证明救回来了。
+
+---
+
+## ⚠️ 先看这里：这是扩展项目，不是从零写的
+
+本项目基于 **[crt106/c3rb3r-btrfs-recovery](https://github.com/crt106/c3rb3r-btrfs-recovery)**（MIT）**大幅扩展**，
+原作者是 [crt106](https://github.com/crt106)。**MIT 许可，版权声明保留在 `LICENSE` 里**。
+
+| | 上游提供 | 本项目新增 |
+|---|---|---|
+| 路线 A · 旧 extent 还原 | ✅ 核心实现（`c3r_btrfs.py` / `c3r_local.py`） | 补充边界案例处理 |
+| 路线 B · 明文提取 | ❌ | ✅ `plain_extract.py`（按 588 字节标记切明文区） |
+| 路线 C · 找副本 | ❌ | ✅ `plain_index.py`（全卷明文索引）+ `carve_install.py` |
+| 路线 D · 磁盘雕刻 | ❌ | ✅ 3 套扫描器（`.osheet` 强签名 / 通用魔数 / OLE2 正文认领） |
+| Synology Drive 重建 | ❌ | ✅ **字节级精确**重建 `.osheet`（SHA-256 与原件一致） |
+| WPS OSheet 容器工具链 | ❌ | ✅ 解析 / 修复 / 严格校验 / 转 xlsx / 附件抠出（10 个脚本） |
+| 交付验证 | 基础校验 | ✅ **两档闸门**（`validate_installed.py` / `deep_validate.py`） |
+| 进度记录 | ❌ | ✅ `progress.py` —— 跨会话、跨天接着干 |
+| 文档 | 7 篇 | ✅ **17 篇**（含两份脱敏实战实录） |
+| 脚本 | 3 个 | ✅ **79 个** |
+
+**如果你只想要"按 Btrfs 旧 extent 逐字节还原"这一个能力**，直接用上游那个就够了，代码更少、依赖更干净。
+
+**本项目的价值在于：把"能救回多少"这个问题拆成四条路线逐个试，
+并且对每一份交付出去的文件都给出可验证的证据。**
+受害者在磁盘被写满、旧块被复用之前，每多试一条路线就多救回一批文件。
+
+---
 
 C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记**，再把文件改名成
 `*.L0CK3D`。没有密钥就解不开密文——但**原始数据往往还在盘上**，
@@ -16,7 +44,7 @@ C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记
 本目录是一个标准的 **Agent Skill**，目录结构是通用的：
 
 ```
-c3rb3r-btrfs-recovery/
+c3rb3r-nas-recovery-lab/
 ├── SKILL.md        ← 主流程（frontmatter 里的 description 决定何时触发）
 ├── references/     ← 17 篇参考文档
 └── scripts/        ← 79 个脚本
@@ -28,10 +56,10 @@ c3rb3r-btrfs-recovery/
 
 | AI 助手 | skill 目录 | 怎么用 |
 |---|---|---|
-| **Claude Code / Claude Desktop** | `~/.claude/skills/c3rb3r-btrfs-recovery/` | 装完直接说人话即可 |
-| **Kimi Code** | `~/.kimi-code/skills/c3rb3r-btrfs-recovery/` | 同上；Kimi 可挂 MiniMax / DeepSeek 等模型 provider，skill 机制一致 |
-| **OpenClaw** | `~/.openclaw/skills/c3rb3r-btrfs-recovery/` | 同上 |
-| **通用 AGENTS 生态目录** | `~/.agents/skills/c3rb3r-btrfs-recovery/` | 任何读 `~/.agents/skills/` 的 harness 都能用 |
+| **Claude Code / Claude Desktop** | `~/.claude/skills/c3rb3r-nas-recovery-lab/` | 装完直接说人话即可 |
+| **Kimi Code** | `~/.kimi-code/skills/c3rb3r-nas-recovery-lab/` | 同上；Kimi 可挂 MiniMax / DeepSeek 等模型 provider，skill 机制一致 |
+| **OpenClaw** | `~/.openclaw/skills/c3rb3r-nas-recovery-lab/` | 同上 |
+| **通用 AGENTS 生态目录** | `~/.agents/skills/c3rb3r-nas-recovery-lab/` | 任何读 `~/.agents/skills/` 的 harness 都能用 |
 
 一键安装（自动探测上面几个目录）：
 

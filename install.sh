@@ -17,7 +17,7 @@
 set -eu
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NAME="c3rb3r-btrfs-recovery"
+NAME="c3rb3r-nas-recovery-lab"
 HOME_DIR="${HOME:-/root}"
 DRY=0
 
