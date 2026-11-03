@@ -348,7 +348,7 @@ $P --dir /work close --result "救回 459/483"                   # 结项
 | `references/transport.md` | Windows / macOS / Linux 的传输与执行姿势 |
 | `references/pitfalls.md` | **踩过的坑**（现象 / 原因 / 处理），实战前先扫一遍 |
 | `references/progress-log.md` | **进度记录规范**：每轮开工落 `PROGRESS.md`，收尾回写 skill |
-| `references/case-*.md` | 两份脱敏后的实战实录 |
+| `references/case-*.md` | 三份实战/设计实录：两份脱敏实战 + **ext4 路线设计与自检** |
 | `CONTRIBUTING.md` | **贡献指南**：怎么提 issue、怎么提 PR、脱敏要求、脚本红线 |
 
 ---

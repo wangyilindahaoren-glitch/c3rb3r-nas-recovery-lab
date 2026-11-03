@@ -987,6 +987,7 @@ python3 tidy_delivery.py <目录> --apply --drop-cipher --backup-dir <备份目�
 | 收尾清理 | `tidy_delivery.py`（单目录）、`cleanup_home.py`（递归整个 home） |
 | 进度记录 | `progress.py`（`PROGRESS.md`：开工 / 切阶段 / 记数字 / 读回 / 结项）、`references/progress-log.md` |
 | 原位放回 | `restore_inplace.py`、`fix_nas_acl.py` |
+| **ext4 路线（v1.1.0 新增）** | `ext4_probe.py`（超块探测 + 已删 inode + **jbd2 日志导出**）、`jrn_match.py`（用明文区指纹**在日志里找回被覆盖的原始字节**）、`references/ext4.md` |
 | 交付前闸门 | `validate_installed.py`、`deep_validate.py` |
 | 其它 | `plain_index.py`、`read_footers.py`、`pdf_xref_repair.py`、`pdf_rebuild_plain.py`、`xlsx_from_members.py`、`drv_survey.py`、`drv_survey2.py`、`drv_grep.py`、`build_wps.py`、`scan.sh`、`status.sh`、`upload.sh`、`mkjob.py` |
 
@@ -1010,6 +1011,12 @@ python3 tidy_delivery.py <目录> --apply --drop-cipher --backup-dir <备份目�
   3 处同长度歧义逐个取证、**同一明文→密文不同**（每文件随机 nonce）、
   全盘明文索引挖出 23 个原件、17 个 PDF 就地修复零损失；
   第三轮扫描改单路、扫描器丢数据与覆盖两个 bug、**OLE2 改按正文认领救回 4 个 `.doc`**。
+- `references/case-20261103-ext4-route.md` —— ext4 路线的设计与自检
+  （⚠️ **没有真实 ext4 设备可跑**，逻辑只用合成样本验证）：
+  为什么 ext4 没有写时复制、**jbd2 日志为什么留着旧内容**、用明文区当指纹的定位原理、
+  28 项自检断言（含"拼出的候选件与原始文件逐字节相同"）、
+  **顺手修掉的扫描器静默失败**（读失败被 `except Exception: pass` 吞掉 → "扫完了 0 命中"），
+  以及**没验证的部分**（日志实际留存行为、跨事务映射、装回端到端）。
 - `references/batch-osheet-recovery.md` —— 从"单个文件试水"到"成批交付"的操作手册：
   全盘密文盘点方法、雕刻索引批量认领、**Drive 仓库↔密文的长度反推公式与撞车防线**、
   `metatext` 长短两版、**两条路互为交叉验证**、密文明文区独立对证、四关交付自检。
