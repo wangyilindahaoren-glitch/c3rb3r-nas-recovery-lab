@@ -1,0 +1,274 @@
+# c3rb3r-btrfs-recovery
+
+> **作者**：wangyilin ｜ **版本**：v1.0.0 ｜ **首发日期**：2026-11-03 ｜ **License**：MIT
+>
+> 群晖 / Linux NAS 遭 **C3RB3R** 勒索后的**无密钥数据恢复**工具箱。
+> 不需要解密密钥，四条路线互为补充，把能救的文件救回来。
+
+C3RB3R 用 ChaCha8 加密文件的一部分，在尾部追加 **588 字节标记**，再把文件改名成
+`*.L0CK3D`。没有密钥就解不开密文——但**原始数据往往还在盘上**，
+只是不再被文件系统引用了。这个工具箱就是用来把它们找回来的。
+
+---
+
+## 用 AI 助手（Claude / Kimi / Cursor 等）的话
+
+本目录是一个 **Agent Skill**：把整个目录放进你的 skill 目录
+（`~/.claude/skills/` / `~/.agents/skills/` / `~/.kimi-code/skills/`），然后直接说：
+
+> "我的群晖被 C3RB3R 勒索了，文件变成 .L0CK3D 了，帮我恢复"
+
+skill 的 `description` 里写了完整的触发词，助手会自动加载 `SKILL.md`
+并按里面的流程走（分流 → 自检 → 定 G → 普查 → 选路线 → 导出 → 验证 → 装回 → 收尾）。
+
+**你只需要准备**：SSH 能连上 NAS、sudo 权限、知道要恢复的目录路径。
+
+助手会自己建 `PROGRESS.md` 记录进度，你随时问"现在到哪了"它都能答。
+
+### 助手第一次会问你什么
+
+加载完 skill，助手**不会直接开跑**，而是先跟你对齐三件事：
+
+**① 它能做什么 / 不能做什么**
+
+> 能做：从磁盘的旧数据块里把被改写过的文件**逐字节还原**（不需要密钥）；
+> 把只被加密一部分的文件切出明文（表格能抢救工作表、PDF 能抢救页面）；
+> 在备份目录、回收站、快照、别人的目录里找同一份文件的原件；
+> 直接在磁盘原始数据区扫描，把还能认出来的文件切出来；
+> 还原 WPS `.osheet` 表格并转成通用 `.xlsx`。
+>
+> 不能做：**不能解密**——被完整加密的文件没有密钥就是解不开；
+> 不能造出已经彻底消失的数据；只支持 Btrfs（群晖/OMV/Unraid），QNAP、ZFS 不适用。
+
+**② 请你提供 4 项信息**
+
+| # | 要什么 | 例子 |
+|---|---|---|
+| 1 | NAS 内网地址 + SSH 端口 | `<NAS_IP>`，端口 `22` 或 `4080` |
+| 2 | SSH 账号 + 密码 | 账号一般是 `admin` |
+| 3 | 要恢复的目录（**绝对路径**） | `/volume1/homes/xxx/某文件夹` |
+| 4 | 恢复结果放在哪（**本地路径**） | `D:\c3r_recover` |
+
+> ⚠️ **密码尽量别直接贴在对话里**（会进对话历史）。
+> 助手会优先建议你自己在终端 SSH 上去跑、它给命令；
+> 其次是设一个环境变量 `NAS_PASS`，由它用 `SSH_ASKPASS` 取，不落盘。
+
+**③ 它拿到信息后会做什么**——建进度表 → 只读自检 → 盘点 → 分流选路线 →
+导出 → 校验 → 验证通过的才放回原路径 → 出报告。
+
+<details>
+<summary>手动使用（不用 AI 助手）</summary>
+
+按 [30 秒自检](#30-秒自检先确认这事能不能干) → [前置条件](#前置条件) →
+[安装与连接](#安装与连接) → [快速开始](#快速开始) 一步步来，
+完整决策树看 [`SKILL.md`](SKILL.md)。
+
+</details>
+
+---
+
+## 30 秒自检：先确认这事能不能干
+
+在动手之前，用这三条判断：
+
+| 检查 | 命令（**NAS 端**，root） | 不通过怎么办 |
+|---|---|---|
+| 卷是不是 Btrfs | `df -T /volume1` / `mount \| grep btrfs` | 不是 Btrfs → 本工具不适用，见 `references/compatibility.md` |
+| 加密程序还在跑吗 | `ls -l /proc/*/exe 2>/dev/null \| grep deleted` | **还在跑就 `kill -STOP` 冻结它**（别 kill、别重启），可能能从内存里取到密钥 |
+| 卷空闲还剩多少 | `df -h /volume1` | **空闲 < 5%** → 旧数据块大概率已被复用，雕刻这条路基本白干，改走"找副本" |
+
+> ⚠️ **恢复过程中不要删任何 `.L0CK3D` 文件**，哪怕已经找到原件了。
+> 旧数据块靠密文文件"拽着"才没被回收，删掉密文等于销毁原件。
+
+---
+
+## 前置条件
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| NAS | 群晖 DSM 6/7、OMV、Unraid 等 **Btrfs** 系统 | QNAP / ZFS **不适用**（机制不同） |
+| SSH | 能 SSH 上去，并能 `sudo` | DSM：控制面板 → 终端机和 SNMP → 启用 SSH |
+| Python | NAS 端 3.6+（DSM 7 自带 3.8） | **只用标准库**，不用装任何东西 |
+| 权限 | 恢复操作需要 **root** | 要读块设备、发 Btrfs ioctl |
+| 本机 | 一个能 SSH 的机器 | 用来解包、校验、转格式；**结果写在这边，不要写回 NAS** |
+| 磁盘 | 本机留够空间 | 第一个案例导出了 229.9 GB |
+
+> 若某台设备没有 Python 3，或不方便联网装包，
+> 可以把盘拆下来挂到 Linux 电脑上离线处理 —— 见 `references/compatibility.md`。
+
+---
+
+## 安装与连接
+
+```bash
+# 1) 把整个 scripts/ 目录传到 NAS（DSM 的 SSH 默认没开 SFTP 子系统，
+#    所以走 ssh + sudo cat 的管道方式；细节见 references/transport.md）
+export NAS_HOST='192.168.1.x' NAS_USER='admin' NAS_PASS='你的密码'
+bash scripts/upload.sh ./scripts/c3r_btrfs.py /tmp/c3r/c3r_btrfs.py
+#    （文件多的话，整个目录打包传更快）
+
+# 2) SSH 上去，用 root 跑
+ssh -p 22 admin@$NAS_HOST
+sudo -i
+cd /tmp/c3r && python3 c3r_btrfs.py preflight /volume1/homes/<用户>/某文件.osheet.L0CK3D
+```
+
+> DSM 会**自动封禁短时间内开太多 SSH 连接的 IP**。
+> 一次只开一个连接；要拉多个文件就打包成 tar 一次拉。
+
+---
+
+## 快速开始
+
+> ⚠️ **下面 ①~④ 全部在 NAS 端（root）跑**。
+> 本地跑会直接报"这个脚本要在 NAS 上以 root 运行"——那是设计如此，不是坏了。
+
+```bash
+# ① 开工先落进度表（在本地跑，见 references/progress-log.md）
+python3 scripts/progress.py --dir /work init \
+        --target "某用户 home 的 624 个密文" --nas "群晖/DSM 7.2.1" --g <稍后填>
+
+# ② 环境自检（NAS 端，root，只读，几分钟）
+python3 scripts/c3r_btrfs.py preflight /volume1/homes/<用户>/某文件.osheet.L0CK3D
+#    逐项 OK / WARN / FAIL；有 FAIL 就按 references/compatibility.md 处理，别硬着头皮往下走
+
+# ③ 看卷信息（NAS 端）：CoW / NoCOW、快照代数
+python3 scripts/c3r_btrfs.py env /volume1
+
+# ④ 确定 G 值（NAS 端）：勒索时新写入的 Btrfs 代数
+python3 scripts/c3r_btrfs.py gens /volume1/homes/<用户> --sample 3000
+#    ⚠️ 不同目录要分别取 G，否则部分目录会 100% no_candidate
+
+# ⑤ 全量普查（NAS 端，只读，输出 JSONL）
+python3 scripts/c3r_btrfs.py survey /volume1/homes/<用户> --g <G> > survey.jsonl.gz
+
+# ⑥ 看普查结果 → 决定走哪条路线
+python3 scripts/c3r_local.py report survey.jsonl.gz --depth 4
+```
+
+完整流程（分流、导出、验证、装回、清理）见 [`SKILL.md`](SKILL.md)。
+
+### 哪些脚本在哪跑
+
+| 在哪跑 | 脚本 |
+|---|---|
+| **NAS 端（root）** | `c3r_btrfs.py` `carve_scan.py` `carve_gen.py` `carve_gen_hits.py` `carve_worker.py` `carve_claim.py` `carve_install.py` `plain_extract.py` `salvage_zip.py` `read_footers.py` `plain_index.py` `ole2_*.py` `restore_inplace.py` `fix_nas_acl.py` `validate_installed.py` `deep_validate.py` |
+| **本地** | `c3r_local.py` `progress.py` `osheet_to_xlsx.py` `verify_osheet_xlsx.py` `osheet_fix_crlf.py` `rebuild_exact.py` `final_pipeline2.py` `xlsx_from_members.py` `mkjob.py` |
+| **两边都行** | `osheet_repair.py` `osheet_check.py` `osheet_strict.py` `probe_modes.py` `pdf_rebuild.py` `pdf_validate.py` `pdf_xref_repair.py` |
+
+---
+
+## 四条恢复路线
+
+| 路线 | 手段 | 适用 | 成本 |
+|---|---|---|---|
+| **A** | Btrfs 写时复制留下的**旧 extent** | 大文件（>1MB）、CoW 共享 | 分钟~小时 |
+| **B** | 密文里**未被加密的那部分字节**仍是明文 | mode `0x25` / `0x26` | 分钟级 |
+| **C** | 备份目录 / 快照 / 回收站 / 别人 home 里的**副本** | 全类型 | 分钟级，命中率常最高 |
+| **D** | 块设备上**雕刻**已释放的旧 extent | mode `0x24` 整文件加密的小文件 | 小时级 |
+
+外加一条 **Synology Drive 重建**路线：Drive 把每个 WPS 文档存成独立 Git 仓库，
+`.git/objects` 里的 blob 没有扩展名、**不会被勒索程序加密**，
+可以据此**逐字节精确**重建 `.osheet` 容器（实测 SHA-256 与原件完全相同）。
+
+**路线 A 优先，A 失败后走 B，C/D 兜底。** 但**顺序要按目标文件的状态分流**——
+被整文件加密的小文件不要再指望旧 extent，直接扫数据区更快。
+
+---
+
+## 安全红线 ⚠️
+
+1. **不删、不移动、不覆盖任何 `.L0CK3D` 文件**，直到用户验收确认。
+   旧 extent 靠密文文件"拽着"才没被释放，删掉密文等于销毁原件。
+2. **不做 defrag、balance、`btrfs check --repair`、rescue**，不跑来源不明的"解密器"。
+   defrag 会重写 extent。
+3. **恢复期间尽量少写盘**：暂停 NVR 录像、下载、索引、同步任务。
+4. **结果写到 NAS 以外的盘**，绝不回写原目录（装回除外，且只新增、不覆盖）。
+5. **NAS 端全程只读**。本工具箱的 NAS 端脚本只做查询、读文件、读块设备。
+6. **汇报要诚实**：精确恢复 + 校验和证实 / 推测后解码通过 / 部分明文 / 失败，
+   必须分开写。候选 ≠ 恢复成功。
+
+---
+
+## 目录结构
+
+```
+SKILL.md              主流程：分流、路线选择、验证、收尾清单
+references/            16 篇详细文档（原理、踩坑、案例、操作手册）
+scripts/               75 个 Python 脚本 + 4 个 shell 脚本
+  c3r_btrfs.py         NAS 端核心：preflight / env / gens / survey / extract / csum / plan
+  c3r_local.py         本地端：解包、校验（SHA / 解码 / 已知原件对照）、挑选候选
+  mkjob.py             把脚本 + 路径列表打包成一个 stdin 作业
+  plain_extract.py     路线 B：按加密模式切出明文部分
+  salvage_zip.py       从损坏的 xlsx/docx/zip 里抢救成员
+  carve_*.py           路线 D：块设备雕刻扫描器 + 认领 + 装回
+  osheet_*.py          WPS OSheet 容器：解析 / 修复 / 校验 / 转 xlsx / 重建
+  ole2_*.py            OLE2（.xls/.doc）容器解析与按正文认领
+  validate_installed.py / deep_validate.py   交付前的"双击能不能打开"闸门
+  progress.py             进度记录：开工建 PROGRESS.md、切阶段、记关键数字、收尾结项
+```
+
+每个脚本都带独立 docstring 说明**在哪运行**（NAS 端 / 本地端）、需要什么依赖。
+
+**依赖**：Python 3.6+ 标准库即可（NAS 端 DSM 自带 3.8）。
+个别脚本可选 `Pillow` / `pillow-heif` / `ffmpeg`（图片音视频解码校验）、
+`openpyxl`（OSheet → xlsx 转换与逐格回读校验）。
+
+---
+
+## 维护约定
+
+**每轮开工必须先落 `PROGRESS.md`，每轮收尾必须回写 skill。**
+
+```bash
+P="python3 scripts/progress.py"
+$P --dir /work init --target "..." --nas "..." --g 9324851   # 拿到参数后的第一条命令
+$P --dir /work stage --name "8 路线D 雕刻"                    # 切阶段
+$P --dir /work metric --name "已装回原件" --value 142         # 记数字
+$P --dir /work status                                         # 换会话时读回
+$P --dir /work close --result "救回 459/483"                   # 结项
+```
+
+进度表让"跨会话、跨天、跨人"的长任务接得上；
+收尾回写 skill（第 14 步）让**这一轮的学费不白交**。
+两者互补，都不能省。详见 [`references/progress-log.md`](references/progress-log.md)。
+
+---
+
+## 文档索引
+
+| 文件 | 内容 |
+|---|---|
+| `references/principles.md` | **原理**：为什么旧数据还在盘上，Btrfs 快照与代数的规则 |
+| `references/c3rb3r-format.md` | 加密格式：588 字节标记、mode 语义、密钥派生 |
+| `references/plain-extract.md` | 路线 B 详解（动手前必读） |
+| `references/osheet.md` | WPS OSheet 容器格式、修复、交付形态 |
+| `references/osheet-rebuild-exact.md` | `.osheet` 字节级精确重建配方 |
+| `references/carving.md` / `carve-generic.md` / `carve-osheet.md` | 路线 D 的三个变体 |
+| `references/synology-drive.md` | Drive 重建路线 |
+| `references/batch-osheet-recovery.md` | 成批恢复操作手册 |
+| `references/compatibility.md` | 各系统（DSM 6/7 / OMV / Unraid）与不适用场景 |
+| `references/transport.md` | Windows / macOS / Linux 的传输与执行姿势 |
+| `references/pitfalls.md` | **踩过的坑**（现象 / 原因 / 处理），实战前先扫一遍 |
+| `references/progress-log.md` | **进度记录规范**：每轮开工落 `PROGRESS.md`，收尾回写 skill |
+| `references/case-*.md` | 两份脱敏后的实战实录 |
+
+---
+
+## 已知适用范围
+
+- **适用**：Btrfs 卷（群晖 DSM 6/7、OMV、Unraid 等），Data 剖面为 single 或 RAID1 类。
+- **不适用**：QNAP / ZFS —— 机制不同，见 `references/compatibility.md`。
+- **无法适用**：文件已被整体覆盖且旧 extent 已被复用（卷空闲 < 5% 时大概率如此）。
+  这时唯一出路是找**别的副本**（路线 C）。
+
+---
+
+## 免责声明
+
+本工具箱用于**数据恢复**，不是解密器，无法解密已被勒索程序加密的内容。
+所有操作默认只读、默认预览。执行删除/装回前请自行确认目标路径与备份。
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。

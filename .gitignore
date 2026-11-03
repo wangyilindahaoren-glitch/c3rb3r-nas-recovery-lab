@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 现场产物（脚本运行时会生成，绝不要提交）
+*.jsonl
+*.jsonl.gz
+*.tsv
+*.log
+.env_out.json
+job_survey.sh
+known_pairs.json
+drive/
+/tmp/
+/workdir/
+
+# 进度表（含目标路径、NAS 信息和真实数字，不要提交）
+PROGRESS.md
+*.PROGRESS.md
+progress/
+
+# 雕刻 / 恢复产物
+/carve_out/
+/carved/
+/copies/
+/plans/
+/out/
+/result/
+*.L0CK3D
+read-me3.txt
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp

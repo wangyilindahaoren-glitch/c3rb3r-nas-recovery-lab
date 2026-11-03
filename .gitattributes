@@ -1,0 +1,22 @@
+# 本项目主要在 Linux / NAS 上运行，**必须强制 LF**。
+# Windows 上 git 默认 autocrlf=true，检出后 .sh 会变成 CRLF，
+# 在 Linux 上执行会报 `bad interpreter: /bin/bash^M`。
+
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.sh    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+LICENSE text eol=lf
+
+# 二进制
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gz    binary
+*.zip   binary
+*.osheet binary
+*.xlsx  binary
+*.pdf   binary
